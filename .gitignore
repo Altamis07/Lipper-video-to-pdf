@@ -1,4 +1,4 @@
 # Virtual environment
 .venv/
 .idea/
-.sample_vids
+.sample_vids/
