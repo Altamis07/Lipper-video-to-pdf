@@ -1,10 +1,12 @@
 from logging import currentframe
 
 import cv2
+from pip._internal.models import candidate
+
 import config
 
 #Load videos
-video_path = config.SAMPLE_VIDEOS_DIR / "test.mp4" #name of video file in string
+video_path = config.SAMPLE_VIDEOS_DIR / "test.MOV" #name of video file in string
 cap = cv2.VideoCapture(str(video_path))
 
 if not cap.isOpened():
@@ -24,19 +26,21 @@ print(f"Duration: {duration:.2f} seconds")
 
 saved_frames = 0
 current_frame = 0
-Threshold = 30
+Threshold = 15
 previous_frame = None
 
 motion = False
 stable_count = 0
 stable_cooldown = 2 #2 frames cooldown
-frame_save_count = 5
+frame_save_count = 3
+
+candidate_frames = []
 
 frame_interval = int(fps * 0.2)
 
 while True:
     success, frame = cap.read()
-    if not success:
+    if not success:# no frames left
         break
 
     if current_frame % frame_interval == 0: #Cut down initial huge frames by frame interval
@@ -60,16 +64,18 @@ while True:
                 #previous frame was true so motion just stopped
                 if motion:
                     stable_count += 1
+
                     if stable_count > stable_cooldown and frame_save_count != 0:
-                        # Take img
+                        # STABLE , Take img
+                        # save until frame_save_count is 0
                         save_frame = True
                         frame_save_count -= 1 # one is saved
                         #reset
                         if frame_save_count == 0:
                             motion = False
                             stable_count = 0
-                            frame_save_count = 5
-
+                            frame_save_count = 3 # initial save count
+    #NEXT: compare images, crop it  and add effects and convert to pdf file
 
 
         if save_frame:
