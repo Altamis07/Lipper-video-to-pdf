@@ -1,7 +1,6 @@
 from logging import currentframe
 
 import cv2
-from pip._internal.models import candidate
 
 import config
 
@@ -23,6 +22,15 @@ print(f"Frames: {frame_count}")
 print(f"Duration: {duration:.2f} seconds")
 
 #Extract Frames
+
+def sharpness_score(frame):#Sharpness score function
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    return cv2.Laplacian(gray, cv2.CV_64F).var()
+
+def save_image(frame_name):
+    frames_dir = config.FRAMES_DIR / f"frame_{current_frame:04d}.jpg"  # directory of saving and name the file
+    cv2.imwrite(str(frames_dir), frame_name)  # save current working frame
+
 
 saved_frames = 0
 current_frame = 0
@@ -48,7 +56,10 @@ while True:
         save_frame = False
 
         if previous_frame is None: #if there is no previous frame then save it ofc
-            save_frame = True
+            save_image(frame)
+            previous_frame = frame.copy()
+            current_frame += 1
+            continue
 
         else:
             difference = cv2.absdiff(frame, previous_frame)
@@ -79,11 +90,30 @@ while True:
 
 
         if save_frame:
-            print(f"Saving frame: {current_frame}")
-            frames_dir = config.FRAMES_DIR/f"frame_{current_frame:04d}.jpg" # directory of saving and name the file
-            cv2.imwrite(str(frames_dir), frame)# save current working frame
+            #print(f"Saving frame: {current_frame}")
+            #frames_dir = config.FRAMES_DIR/f"frame_{current_frame:04d}.jpg" # directory of saving and name the file
+            #cv2.imwrite(str(frames_dir), frame)# save current working frame
+            candidate_frames.append(frame.copy())
 
-            saved_frames += 1
+            if len(candidate_frames) == 3 :
+                best_frame = None
+                best_score = -1
+
+                for candidate in candidate_frames:
+
+                    score = sharpness_score(candidate)
+                    print(score)
+
+                    if score > best_score:
+                        best_score = score
+                        best_frame = candidate
+
+                print(f"Best score: {best_score:.2f}")
+                save_image(best_frame)#save this frame
+                saved_frames += 1
+
+                candidate_frames.clear()
+
         previous_frame = frame.copy() # stores copy of saved frame to compare with next one
 
     current_frame += 1
