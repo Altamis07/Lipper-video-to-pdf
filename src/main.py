@@ -1,7 +1,5 @@
-from logging import currentframe
-
 import cv2
-
+import numpy as np
 import config
 
 #Load videos
@@ -21,20 +19,41 @@ print(f"FPS: {fps}")
 print(f"Frames: {frame_count}")
 print(f"Duration: {duration:.2f} seconds")
 
-#Extract Frames
+#---Extract Frames---
 
-def sharpness_score(frame):#Sharpness score function
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+def sharpness_score(in_frame):#Sharpness score function
+    gray = cv2.cvtColor(in_frame, cv2.COLOR_BGR2GRAY)
     return cv2.Laplacian(gray, cv2.CV_64F).var()
 
-def save_image(frame_name):
-    frames_dir = config.FRAMES_DIR / f"frame_{current_frame:04d}.jpg"  # directory of saving and name the file
+def save_image(frame_name, frame_number):
+    frames_dir = config.FRAMES_DIR / f"frame_{frame_number:04d}.jpg"  # directory of saving and name the file
     cv2.imwrite(str(frames_dir), frame_name)  # save current working frame
+
+
+def get_sharpest_frame(candidate_frames_grp):
+    best_frame = None
+    best_score = -1
+
+    for candidate in candidate_frames_grp:
+
+        score = sharpness_score(candidate)
+        print(score)
+
+        if score > best_score:
+            best_score = score
+            best_frame = candidate
+
+    return best_frame,best_score
+
+def calculate_change_score(now_frame, before_frame):
+    difference = cv2.absdiff(now_frame, before_frame)
+    return np.mean(difference)
+
 
 
 saved_frames = 0
 current_frame = 0
-Threshold = 15
+threshold = 15
 previous_frame = None
 
 motion = False
@@ -46,6 +65,7 @@ candidate_frames = []
 
 frame_interval = int(fps * 0.2)
 
+#process Video
 while True:
     success, frame = cap.read()
     if not success:# no frames left
@@ -53,20 +73,19 @@ while True:
 
     if current_frame % frame_interval == 0: #Cut down initial huge frames by frame interval
 
-        save_frame = False
+        should_save_frame = False
 
-        if previous_frame is None: #if there is no previous frame then save it ofc
-            save_image(frame)
+        if previous_frame is None: #-----if there is no previous frame then save it ofc
+            save_image(frame, current_frame)
             previous_frame = frame.copy()
             current_frame += 1
             continue
 
         else:
-            difference = cv2.absdiff(frame, previous_frame)
-            change_score = difference.mean()
-
+            #-----MOTION DETECTION-----
+            change_score = calculate_change_score(previous_frame, frame)
             # Output of compared frames
-            if change_score > Threshold:
+            if change_score > threshold:
                 #Video is moving Motion detect logic
                 motion = True
                 stable_count = 0
@@ -79,37 +98,28 @@ while True:
                     if stable_count > stable_cooldown and frame_save_count != 0:
                         # STABLE , Take img
                         # save until frame_save_count is 0
-                        save_frame = True
+                        should_save_frame = True
                         frame_save_count -= 1 # one is saved
                         #reset
                         if frame_save_count == 0:
                             motion = False
                             stable_count = 0
                             frame_save_count = 3 # initial save count
+
     #NEXT: compare images, crop it  and add effects and convert to pdf file
 
-
-        if save_frame:
-            #print(f"Saving frame: {current_frame}")
-            #frames_dir = config.FRAMES_DIR/f"frame_{current_frame:04d}.jpg" # directory of saving and name the file
-            #cv2.imwrite(str(frames_dir), frame)# save current working frame
+        #SAVING FRAMES Sharpness -> Page detect
+        if should_save_frame:
             candidate_frames.append(frame.copy())
 
             if len(candidate_frames) == 3 :
-                best_frame = None
-                best_score = -1
+                #-get sharpest frame-
+                final_frame,best_frame_score = get_sharpest_frame(candidate_frames)
+                print(f"Best score: {best_frame_score:.2f}")
 
-                for candidate in candidate_frames:
+                #-- CONTINUEEEEEEEEE HEREEEEEEEEE
 
-                    score = sharpness_score(candidate)
-                    print(score)
-
-                    if score > best_score:
-                        best_score = score
-                        best_frame = candidate
-
-                print(f"Best score: {best_score:.2f}")
-                save_image(best_frame)#save this frame
+                save_image(final_frame, current_frame)#save this frame
                 saved_frames += 1
 
                 candidate_frames.clear()
