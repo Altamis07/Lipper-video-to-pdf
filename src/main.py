@@ -21,13 +21,15 @@ print(f"Duration: {duration:.2f} seconds")
 
 #---Extract Frames---
 
+
+
 def sharpness_score(in_frame):#Sharpness score function
     gray = cv2.cvtColor(in_frame, cv2.COLOR_BGR2GRAY)
     return cv2.Laplacian(gray, cv2.CV_64F).var()
 
 def save_image(frame_name, frame_number):
     frames_dir = config.FRAMES_DIR / f"frame_{frame_number:04d}.jpg"  # directory of saving and name the file
-    cv2.imwrite(str(frames_dir), frame_name)  # save current working frame
+    cv2.imwrite(str(frames_dir), frame_name, [int(cv2.IMWRITE_JPEG_QUALITY), 100])  # save current working frame
 
 
 def get_sharpest_frame(candidate_frames_grp):
@@ -52,14 +54,17 @@ def calculate_change_score(now_frame, before_frame):
 
 def scan_detection(image):
     height, width = image.shape[:2]
-    # Default fallback: entire image boundaries
     document_contour = np.array([[[0, 0]], [[width, 0]], [[width, height]], [[0, height]]], dtype=np.int32)
 
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    blur = cv2.bilateralFilter(gray, 9, 75, 75)
+    # Keep original frame clean so text stays crisp
+    annotated_image = image.copy()
 
-    thresh = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 15, 4)
-    edges = cv2.Canny(blur, 30, 120)
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # Isolate bilateral filter processing strictly to this variable
+    gray_processed = cv2.bilateralFilter(gray, 9, 75, 75)
+
+    thresh = cv2.adaptiveThreshold(gray_processed, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 15, 4)
+    edges = cv2.Canny(gray_processed, 30, 120)
     combined = cv2.bitwise_or(thresh, edges)
 
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
@@ -71,8 +76,6 @@ def scan_detection(image):
 
     max_area = 0
     img_area = width * height
-
-    # Store the final 4 clean corners explicitly for rendering straight lines
     final_corners = None
 
     for contour in contours:
@@ -100,7 +103,6 @@ def scan_detection(image):
                     box = cv2.boxPoints(rect)
                     pts = np.int32(box)
 
-                # If squeezed array drops to a single dimension error, patch it safely
                 if len(pts.shape) == 2 and pts.shape[0] >= 3:
                     s = pts.sum(axis=1)
                     diff = np.diff(pts, axis=1)
@@ -115,9 +117,6 @@ def scan_detection(image):
                     max_area = area
                     break
 
-    annotated_image = image.copy()
-
-    # FIX: If we extracted 4 distinct corners, draw 4 dead-straight lines connecting them
     if final_corners is not None:
         tl, tr, br, bl = final_corners
         cv2.line(annotated_image, tl, tr, (0, 255, 0), 3)
@@ -125,10 +124,43 @@ def scan_detection(image):
         cv2.line(annotated_image, br, bl, (0, 255, 0), 3)
         cv2.line(annotated_image, bl, tl, (0, 255, 0), 3)
     else:
-        # Fallback tracking display
         cv2.drawContours(annotated_image, [document_contour], -1, (0, 255, 0), 3)
 
     return document_contour, annotated_image
+
+
+def perspective_warp(image, target_contour):
+    pts = target_contour.squeeze()
+    (tl, tr, br, bl) = pts
+
+    width_a = np.sqrt(((br[0] - bl[0]) ** 2) + ((br[1] - bl[1]) ** 2))
+    width_b = np.sqrt(((tr[0] - tl[0]) ** 2) + ((tr[1] - tl[1]) ** 2))
+    max_width = max(int(width_a), int(width_b))
+
+    height_a = np.sqrt(((tr[0] - br[0]) ** 2) + ((tr[1] - br[1]) ** 2))
+    height_b = np.sqrt(((tl[0] - bl[0]) ** 2) + ((tl[1] - bl[1]) ** 2))
+    max_height = max(int(height_a), int(height_b))
+
+    dst = np.array([
+        [0, 0],
+        [max_width - 1, 0],
+        [max_width - 1, max_height - 1],
+        [0, max_height - 1]
+    ], dtype="float32")
+
+    transform_matrix = cv2.getPerspectiveTransform(pts.astype("float32"), dst)
+    return cv2.warpPerspective(image, transform_matrix, (max_width, max_height))
+
+
+def enhance_document(warped_image):
+    # Convert to grayscale
+    gray = cv2.cvtColor(warped_image, cv2.COLOR_BGR2GRAY)
+
+    # Linear Dynamic Range Stretch
+    # Automatically scales the lowest value to 0 (black) and highest to 255 (white)
+    popped_text = cv2.normalize(gray, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
+
+    return popped_text
 
 saved_frames = 0
 current_frame = 0
@@ -144,15 +176,22 @@ candidate_frames = []
 
 frame_interval = int(fps * 0.2)
 
-# Create a resizable display window
-cv2.namedWindow("Detected Page", cv2.WINDOW_NORMAL)
+
+
+#cv2.namedWindow("Detected Page", cv2.WINDOW_NORMAL)
+#cv2.namedWindow("Flattened Document", cv2.WINDOW_NORMAL)
+#cv2.namedWindow("final Document", cv2.WINDOW_NORMAL)
 
 
 #process Video
 while True:
+
+
     success, frame = cap.read()
     if not success:# no frames left
         break
+
+
 
     if current_frame % frame_interval == 0: #Cut down initial huge frames by frame interval
 
@@ -161,7 +200,8 @@ while True:
         if previous_frame is None: #-----if there is no previous frame then save it ofc
             first_frame = frame.copy()
             contour, first_out = scan_detection(first_frame)
-            save_image(first_out, current_frame)
+            first_flattened = perspective_warp(first_out, contour)
+            save_image(first_flattened, current_frame)
             previous_frame = frame.copy()
             current_frame += 1
             continue
@@ -202,15 +242,27 @@ while True:
                 final_frame,best_frame_score = get_sharpest_frame(candidate_frames)
                 print(f"Best score: {best_frame_score:.2f}")
 
-                #-- CONTINUEEEEEEEEE HEREEEEEEEEE
+
+
+                #Detect corners
                 doc_contour, visual_frame = scan_detection(final_frame)
 
+                #WRAP Frame
+                flattened_page = perspective_warp(final_frame, doc_contour)
+
+                #Filters
+                final_image = enhance_document(flattened_page)
 
 
-                cv2.imshow("Detected Page", visual_frame)
+                #cv2.imshow("Detected Page", visual_frame)
+                #cv2.imshow("Flattened Document", flattened_page)
+                #cv2.imshow("final Document", final_image)
+
+
+
                 cv2.waitKey(0)
                 cv2.destroyAllWindows()
-                save_image(visual_frame, current_frame)#save this frame
+                save_image(final_image, current_frame)#save this frame
                 saved_frames += 1
 
                 candidate_frames.clear()
