@@ -156,9 +156,19 @@ def enhance_document(warped_image):
     # Convert to grayscale
     gray = cv2.cvtColor(warped_image, cv2.COLOR_BGR2GRAY)
 
-    # Linear Dynamic Range Stretch
-    # Automatically scales the lowest value to 0 (black) and highest to 255 (white)
-    popped_text = cv2.normalize(gray, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
+    # 1. Base normalization stretch (the one that works well)
+    normalized = cv2.normalize(gray, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
+
+    # 2. Smoothly clip the extreme highs/lows to make the background uniform white
+    # and ink solid black, while letting midtones smoothly transition.
+    #Change 2nd and 3rd val of xp for fine tune , 2nd for text and 3rd for bg
+    xp = [0, 50, 245, 255]
+    fp = [0, 0, 255, 255]
+    x = np.arange(256)
+    table = np.interp(x, xp, fp).astype('uint8')
+
+    # Apply the clean map
+    popped_text = cv2.LUT(normalized, table)
 
     return popped_text
 
