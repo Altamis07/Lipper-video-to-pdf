@@ -209,9 +209,17 @@ while True:
 
         if previous_frame is None: #-----if there is no previous frame then save it ofc
             first_frame = frame.copy()
-            contour, first_out = scan_detection(first_frame)
-            first_flattened = perspective_warp(first_out, contour)
-            save_image(first_flattened, current_frame)
+
+            # Detect corners
+            doc_contour, visual_frame = scan_detection(first_frame)
+
+            # WRAP Frame
+            flattened_page = perspective_warp(first_frame, doc_contour)
+
+            # Filters
+            first_image = enhance_document(flattened_page)
+            save_image(first_image, current_frame)
+
             previous_frame = frame.copy()
             current_frame += 1
             continue
