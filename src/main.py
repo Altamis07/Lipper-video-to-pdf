@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+from PIL import Image
 import config
 
 #Load videos
@@ -172,6 +173,54 @@ def enhance_document(warped_image):
 
     return popped_text
 
+def get_unique_pdf_name():
+
+    pdf_name = "Doc"
+    counter = 0
+
+    while True:
+
+        if counter == 0:
+            pdf_path = config.PDF_DIR / f"{pdf_name}.pdf"
+        else:
+            pdf_path = config.PDF_DIR / f"{pdf_name}_{counter}.pdf"
+
+        if not pdf_path.exists():
+            return pdf_path
+
+        counter += 1
+
+def create_pdf():
+
+    image_files = sorted(config.FRAMES_DIR.glob("*.jpg")) #Iterate through every saved image
+
+    if not image_files:
+        print("No images found")
+        return
+
+    pdf_pages = []
+
+    for image_path in image_files: #iterate through each image
+        img = Image.open(image_path)
+
+        if img.mode != "RGB": #convert img to rgb
+            img = img.convert("RGB")
+
+        pdf_pages.append(img) # store page
+
+    output_pdf_path = get_unique_pdf_name()
+
+    pdf_pages[0].save(output_pdf_path, save_all=True, append_images=pdf_pages[1:])
+    print("PDF created")
+
+    if output_pdf_path.exists():
+        for image_path in image_files:
+            image_path.unlink()
+
+    print("Temporary files deleted")
+
+
+
 saved_frames = 0
 current_frame = 0
 threshold = 15
@@ -218,7 +267,9 @@ while True:
 
             # Filters
             first_image = enhance_document(flattened_page)
+
             save_image(first_image, current_frame)
+
 
             previous_frame = frame.copy()
             current_frame += 1
@@ -276,11 +327,10 @@ while True:
                 #cv2.imshow("Flattened Document", flattened_page)
                 #cv2.imshow("final Document", final_image)
 
-
-
-                cv2.waitKey(0)
-                cv2.destroyAllWindows()
+                #cv2.waitKey(0)
+                #cv2.destroyAllWindows()
                 save_image(final_image, current_frame)#save this frame
+
                 saved_frames += 1
 
                 candidate_frames.clear()
@@ -292,5 +342,8 @@ while True:
 
 
 cap.release()
+
+#save the pdf file
+create_pdf()
 
 print(f"Total saved frames: {saved_frames}")
