@@ -4,24 +4,21 @@ from PIL import Image
 import config
 
 #Load videos
-video_path = config.SAMPLE_VIDEOS_DIR / "test.MOV" #name of video file in string
-cap = cv2.VideoCapture(str(video_path))
+def load_video(video_path):
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print("Could not open video file")
+        exit(0)
 
-if not cap.isOpened():
-    print("Could not open video file")
-    exit(0)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+    duration = frame_count / fps
 
-fps = cap.get(cv2.CAP_PROP_FPS)
-frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-duration = frame_count / fps
-
-print("✅ Video Loaded")
-print(f"FPS: {fps}")
-print(f"Frames: {frame_count}")
-print(f"Duration: {duration:.2f} seconds")
-
-#---Extract Frames---
-
+    print("✅ Video Loaded")
+    print(f"FPS: {fps}")
+    print(f"Frames: {frame_count}")
+    print(f"Duration: {duration:.2f} seconds")
+    return cap, fps, frame_count, duration
 
 
 def sharpness_score(in_frame):#Sharpness score function
@@ -221,6 +218,10 @@ def create_pdf():
 
 
 
+
+#Load Video
+cap, fps, frame_count, duration  = load_video(config.SAMPLE_VIDEOS_DIR/ "test.mov")
+
 saved_frames = 0
 current_frame = 0
 threshold = 15
@@ -234,12 +235,6 @@ frame_save_count = 3
 candidate_frames = []
 
 frame_interval = int(fps * 0.2)
-
-
-
-#cv2.namedWindow("Detected Page", cv2.WINDOW_NORMAL)
-#cv2.namedWindow("Flattened Document", cv2.WINDOW_NORMAL)
-#cv2.namedWindow("final Document", cv2.WINDOW_NORMAL)
 
 
 #process Video
