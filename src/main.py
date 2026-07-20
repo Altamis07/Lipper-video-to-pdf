@@ -14,10 +14,10 @@ def load_video(video_path):
     frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
     duration = frame_count / fps
 
-    print("✅ Video Loaded")
-    print(f"FPS: {fps}")
-    print(f"Frames: {frame_count}")
-    print(f"Duration: {duration:.2f} seconds")
+    #print("✅ Video Loaded")
+    #print(f"FPS: {fps}")
+    #print(f"Frames: {frame_count}")
+    #print(f"Duration: {duration:.2f} seconds")
     return cap, fps, frame_count, duration
 
 
@@ -37,7 +37,7 @@ def get_sharpest_frame(candidate_frames_grp):
     for candidate in candidate_frames_grp:
 
         score = sharpness_score(candidate)
-        print(score)
+        #print(score)
 
         if score > best_score:
             best_score = score
@@ -56,6 +56,8 @@ def scan_detection(image):
 
     # Keep original frame clean so text stays crisp
     annotated_image = image.copy()
+
+
 
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     # Isolate bilateral filter processing strictly to this variable
@@ -215,130 +217,135 @@ def create_pdf():
             image_path.unlink()
 
     print("Temporary files deleted")
+    return output_pdf_path
 
 
 
 
-#Load Video
-cap, fps, frame_count, duration  = load_video(config.SAMPLE_VIDEOS_DIR/ "test.mov")
 
-saved_frames = 0
-current_frame = 0
-threshold = 15
-previous_frame = None
+# Sample down frames -> Motion detection -> apply functions -> save images
+def process_video(video_path):
+    # Load Video
+    cap, fps, frame_count, duration = load_video(video_path)
 
-motion = False
-stable_count = 0
-stable_cooldown = 2 #2 frames cooldown
-frame_save_count = 3
+    saved_frames = 0
+    current_frame = 0
+    threshold = 15
+    previous_frame = None
 
-candidate_frames = []
+    motion = False
+    stable_count = 0
+    stable_cooldown = 2  # 2 frames cooldown
+    frame_save_count = 3
 
-frame_interval = int(fps * 0.2)
+    candidate_frames = []
 
+    frame_interval = int(fps * 0.2)
 
-#process Video
-while True:
-
-
-    success, frame = cap.read()
-    if not success:# no frames left
-        break
+    #process Video
+    while True:
 
 
-
-    if current_frame % frame_interval == 0: #Cut down initial huge frames by frame interval
-
-        should_save_frame = False
-
-        if previous_frame is None: #-----if there is no previous frame then save it ofc
-            first_frame = frame.copy()
-
-            # Detect corners
-            doc_contour, visual_frame = scan_detection(first_frame)
-
-            # WRAP Frame
-            flattened_page = perspective_warp(first_frame, doc_contour)
-
-            # Filters
-            first_image = enhance_document(flattened_page)
-
-            save_image(first_image, current_frame)
+        success, frame = cap.read()
+        if not success:# no frames left
+            break
 
 
-            previous_frame = frame.copy()
-            current_frame += 1
-            continue
 
-        else:
-            #-----MOTION DETECTION-----
-            change_score = calculate_change_score(previous_frame, frame)
-            # Output of compared frames
-            if change_score > threshold:
-                #Video is moving Motion detect logic
-                motion = True
-                stable_count = 0
+        if current_frame % frame_interval == 0: #Cut down initial huge frames by frame interval
+
+            should_save_frame = False
+
+            if previous_frame is None: #-----if there is no previous frame then save it ofc
+                first_frame = frame.copy()
+
+                # Detect corners
+                doc_contour, visual_frame = scan_detection(first_frame)
+
+                # WRAP Frame
+                flattened_page = perspective_warp(first_frame, doc_contour)
+
+                # Filters
+                first_image = enhance_document(flattened_page)
+
+                save_image(first_image, current_frame)
+
+
+                previous_frame = frame.copy()
+                current_frame += 1
+                continue
+
             else:
-                #video is still
-                #previous frame was true so motion just stopped
-                if motion:
-                    stable_count += 1
+                #-----MOTION DETECTION-----
+                change_score = calculate_change_score(previous_frame, frame)
+                # Output of compared frames
+                if change_score > threshold:
+                    #Video is moving Motion detect logic
+                    motion = True
+                    stable_count = 0
+                else:
+                    #video is still
+                    #previous frame was true so motion just stopped
+                    if motion:
+                        stable_count += 1
 
-                    if stable_count > stable_cooldown and frame_save_count != 0:
-                        # STABLE , Take img
-                        # save until frame_save_count is 0
-                        should_save_frame = True
-                        frame_save_count -= 1 # one is saved
-                        #reset
-                        if frame_save_count == 0:
-                            motion = False
-                            stable_count = 0
-                            frame_save_count = 3 # initial save count
+                        if stable_count > stable_cooldown and frame_save_count != 0:
+                            # STABLE , Take img
+                            # save until frame_save_count is 0
+                            should_save_frame = True
+                            frame_save_count -= 1 # one is saved
+                            #reset
+                            if frame_save_count == 0:
+                                motion = False
+                                stable_count = 0
+                                frame_save_count = 3 # initial save count
 
-    #NEXT: compare images, crop it  and add effects and convert to pdf file
+        #NEXT: compare images, crop it  and add effects and convert to pdf file
 
-        #SAVING FRAMES Sharpness -> Page detect
-        if should_save_frame:
-            candidate_frames.append(frame.copy())
+            #SAVING ---- Check frame for sharpness -> Detect corners -> Warp frame -> Apply enhancement ->SAVE
+            if should_save_frame:
+                candidate_frames.append(frame.copy())
 
-            if len(candidate_frames) == 3 :
-                #-get sharpest frame-
-                final_frame,best_frame_score = get_sharpest_frame(candidate_frames)
-                print(f"Best score: {best_frame_score:.2f}")
-
-
-
-                #Detect corners
-                doc_contour, visual_frame = scan_detection(final_frame)
-
-                #WRAP Frame
-                flattened_page = perspective_warp(final_frame, doc_contour)
-
-                #Filters
-                final_image = enhance_document(flattened_page)
-
-
-                #cv2.imshow("Detected Page", visual_frame)
-                #cv2.imshow("Flattened Document", flattened_page)
-                #cv2.imshow("final Document", final_image)
-
-                #cv2.waitKey(0)
-                #cv2.destroyAllWindows()
-                save_image(final_image, current_frame)#save this frame
-
-                saved_frames += 1
-
-                candidate_frames.clear()
-
-        previous_frame = frame.copy() # stores copy of saved frame to compare with next one
-
-    current_frame += 1
+                if len(candidate_frames) == 3 :
+                    #-get sharpest frame-
+                    final_frame,best_frame_score = get_sharpest_frame(candidate_frames)
+                    print(f"Best score: {best_frame_score:.2f}")
 
 
 
-cap.release()
+                    #Detect corners
+                    doc_contour, visual_frame = scan_detection(final_frame)
 
-#save the pdf file
-create_pdf()
+                    # exeption handling
+                    if doc_contour is None:
+                        candidate_frames.clear()
+                        continue
 
-print(f"Total saved frames: {saved_frames}")
+                    #WRAP Frame
+                    flattened_page = perspective_warp(final_frame, doc_contour)
+
+                    #Enhance
+                    final_image = enhance_document(flattened_page)
+
+                    save_image(final_image, current_frame)#save this frame
+
+                    saved_frames += 1
+
+                    candidate_frames.clear()
+
+            previous_frame = frame.copy() # stores copy of saved frame to compare with next one
+
+        current_frame += 1
+
+    cap.release()
+
+    # save the pdf file
+    final_pdf_path = create_pdf()
+
+    print(f"Total saved frames: {saved_frames}")
+    return str(final_pdf_path)
+
+
+
+if __name__ == "__main__":
+    process_video(config.SAMPLE_VIDEOS_DIR/"test.MOV")
